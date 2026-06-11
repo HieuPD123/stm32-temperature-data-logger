@@ -1,0 +1,18 @@
+# Build folders
+Debug/
+Release/
+
+# STM32CubeIDE settings
+.settings/
+
+# Compiled files
+*.o
+*.d
+*.su
+*.elf
+*.bin
+*.hex
+*.map
+
+# Temporary files
+*.tmp
