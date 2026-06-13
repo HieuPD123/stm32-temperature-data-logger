@@ -2,7 +2,7 @@ from datetime import datetime
 import serial
 
 ser = serial.Serial(
-    port='COM3',      # sửa thành cổng COM của bạn
+    port='????', # Dùng cổng nào thì điền
     baudrate=115200,
     timeout=1
 )
