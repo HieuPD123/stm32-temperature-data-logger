@@ -91,6 +91,7 @@ int main(void)
   MX_I2C1_Init();
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
+    HAL_TIM_Base_Start(&htim4);
     Internal_RTC_Init(&hrtc);
     SSD1306_Init();
     /* USER CODE END 2 */
