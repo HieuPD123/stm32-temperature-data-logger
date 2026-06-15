@@ -10,6 +10,13 @@
 #include "main.h"
 #include "fatfs.h"
 
+#include "ds18b20.h"
+#include "oled_ui.h"
+#include "ssd1306.h"
+
+#include <stdio.h>
+#include <string.h>
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -39,23 +46,157 @@ SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim4;
 
+UART_HandleTypeDef huart1;
+DMA_HandleTypeDef hdma_usart1_tx;
+
 /* USER CODE BEGIN PV */
+
+static uint32_t s_measure_start_tick = 0;
+static float s_last_temperature_c = 0.0f;
+static const char s_log_file_name[] = "0:/temp.csv";
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_RTC_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
+
+static void App_RenderUi(void);
+static void App_StartTemperatureCycle(void);
+static void App_UpdateTemperatureCycle(void);
+static void App_LogTemperature(float temperature_c);
+static void App_UpdateSdSpaceInfo(void);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static void App_RenderUi(void)
+{
+  Update_OLED_Display();
+  SSD1306_UpdateScreen();
+}
+
+static void App_StartTemperatureCycle(void)
+{
+  DS18B20_StartConvert();
+  s_measure_start_tick = HAL_GetTick();
+}
+
+static void App_LogTemperature(float temperature_c)
+{
+  FRESULT result;
+  UINT bytes_written = 0;
+  char log_line[64];
+
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef sDate = {0};
+
+  HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+  HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+  result = f_mount(&USERFatFS, USERPath, 1U);
+  if(result != FR_OK)
+  {
+    OLED_SetSD(OLED_SD_ERROR, 0);
+    return;
+  }
+
+  result = f_open(&USERFile,
+                  s_log_file_name,
+                  FA_OPEN_ALWAYS | FA_WRITE);
+  if(result != FR_OK)
+  {
+    OLED_SetSD(OLED_SD_ERROR, 0);
+    return;
+  }
+
+  result = f_lseek(&USERFile, f_size(&USERFile));
+  if(result != FR_OK)
+  {
+    f_close(&USERFile);
+    OLED_SetSD(OLED_SD_ERROR, 0);
+    return;
+  }
+
+  snprintf(log_line,
+           sizeof(log_line),
+           "%04u-%02u-%02u %02u:%02u:%02u,%.2f\r\n",
+           2000U + sDate.Year,
+           sDate.Month,
+           sDate.Date,
+           sTime.Hours,
+           sTime.Minutes,
+           sTime.Seconds,
+           temperature_c);
+
+  result = f_write(&USERFile,
+                   log_line,
+                   (UINT)strlen(log_line),
+                   &bytes_written);
+
+  if(result == FR_OK && bytes_written == strlen(log_line))
+  {
+    (void)f_sync(&USERFile);
+    App_UpdateSdSpaceInfo();
+  }
+  else
+  {
+    OLED_SetSD(OLED_SD_ERROR, 0);
+  }
+
+  (void)f_close(&USERFile);
+}
+
+static void App_UpdateSdSpaceInfo(void)
+{
+  FATFS *fs = NULL;
+  DWORD free_clusters = 0;
+  DWORD total_clusters = 0;
+
+  if(f_getfree(USERPath, &free_clusters, &fs) != FR_OK || fs == NULL)
+  {
+    OLED_SetSD(OLED_SD_ERROR, 0);
+    return;
+  }
+
+  total_clusters = fs->n_fatent - 2U;
+
+  if(total_clusters == 0U)
+  {
+    OLED_SetSD(OLED_SD_ERROR, 0);
+    return;
+  }
+
+  OLED_SetSD(OLED_SD_OK,
+             (uint8_t)((free_clusters * 100U) / total_clusters));
+}
+
+static void App_UpdateTemperatureCycle(void)
+{
+  if((HAL_GetTick() - s_measure_start_tick) < 750U)
+  {
+    App_RenderUi();
+    HAL_Delay(10);
+    return;
+  }
+
+  s_last_temperature_c = DS18B20_ReadTemp();
+  OLED_SetTemperature(s_last_temperature_c);
+
+  App_RenderUi();
+  App_LogTemperature(s_last_temperature_c);
+
+  App_StartTemperatureCycle();
+}
 
 /* USER CODE END 0 */
 
@@ -88,12 +229,30 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_TIM4_Init();
   MX_I2C1_Init();
   MX_FATFS_Init();
   MX_SPI1_Init();
   MX_RTC_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+
+  SSD1306_Init();
+  OLED_SetSD(OLED_SD_ABSENT, 0);
+  OLED_SetTemperature(0.0f);
+
+  if(f_mount(&USERFatFS, USERPath, 1U) == FR_OK)
+  {
+    App_UpdateSdSpaceInfo();
+  }
+  else
+  {
+    OLED_SetSD(OLED_SD_ERROR, 0);
+  }
+
+  App_RenderUi();
+  App_StartTemperatureCycle();
 
   /* USER CODE END 2 */
 
@@ -104,6 +263,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    App_UpdateTemperatureCycle();
   }
   /* USER CODE END 3 */
 }
@@ -300,6 +460,55 @@ static void MX_TIM4_Init(void)
   /* USER CODE BEGIN TIM4_Init 2 */
 
   /* USER CODE END TIM4_Init 2 */
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
 
 }
 

@@ -2,6 +2,7 @@
 #define __SD_SPI_H
 
 #include "main.h"
+#include "string.h"
 
 /* Return status */
 #define SD_OK      0

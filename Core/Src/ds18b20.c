@@ -99,19 +99,20 @@ uint8_t DS18B20_Read(void)
     return value;
 }
 
-float DS18B20_GetTemp(void)
+void DS18B20_StartConvert(void)
+{
+    if(!DS18B20_Start())
+        return;
+
+    DS18B20_Write(0xCC);
+    DS18B20_Write(0x44);
+}
+// Cách 750ms
+float DS18B20_ReadTemp(void)
 {
     uint8_t Temp_Byte1;
     uint8_t Temp_Byte2;
     int16_t RAW_Temp;
-
-    if(!DS18B20_Start())
-        return -1000.0f;
-
-    DS18B20_Write(0xCC);
-    DS18B20_Write(0x44);
-
-    HAL_Delay(750);
 
     if(!DS18B20_Start())
         return -1000.0f;

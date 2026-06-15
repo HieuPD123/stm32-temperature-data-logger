@@ -287,10 +287,16 @@ uint8_t SD_ReadBlock(
 	    }
 	}
 
-	for(uint16_t i=0;i<512;i++)
-	{
-	    buf[i] = SPI_TxRx(0xFF);
-	}
+	static uint8_t dummy_tx[512];
+
+	memset(dummy_tx, 0xFF, sizeof(dummy_tx));
+
+	HAL_SPI_TransmitReceive(
+	    &hspi1,
+	    dummy_tx,
+	    buf,
+	    512,
+	    HAL_MAX_DELAY);
 
 	SPI_TxRx(0xFF); // CRC high
 	SPI_TxRx(0xFF); // CRC low
@@ -332,10 +338,11 @@ uint8_t SD_WriteBlock(
 	// Start block token
 	SPI_TxRx(0xFE);
 
-	for(uint16_t i=0;i<512;i++)
-	{
-	    SPI_TxRx(buf[i]);
-	}
+	HAL_SPI_Transmit(
+	    &hspi1,
+	    (uint8_t*)buf,
+	    512,
+	    HAL_MAX_DELAY);
 
 	SPI_TxRx(0xFF); // CRC high
 	SPI_TxRx(0xFF); // CRC low
@@ -407,10 +414,18 @@ uint8_t SD_ReadBlocks(
 			}
 		}
 
-		for(uint16_t j=0;j<512;j++)
-		{
-			buf[read_index++] = SPI_TxRx(0xFF);
-		}
+		static uint8_t dummy_tx[512];
+
+		memset(dummy_tx, 0xFF, sizeof(dummy_tx));
+
+		HAL_SPI_TransmitReceive(
+		    &hspi1,
+		    dummy_tx,
+		    &buf[read_index],
+		    512,
+		    HAL_MAX_DELAY);
+
+		read_index += 512;
 
 		SPI_TxRx(0xFF); // CRC high
 		SPI_TxRx(0xFF); // CRC low
@@ -473,10 +488,13 @@ uint8_t SD_WriteBlocks(
     	// Start block token
         SPI_TxRx(0xFC);
 
-        for(uint16_t j = 0; j < 512; j++)
-        {
-            SPI_TxRx(buf[write_index++]);
-        }
+        HAL_SPI_Transmit(
+            &hspi1,
+            (uint8_t*)&buf[write_index],
+            512,
+            HAL_MAX_DELAY);
+
+        write_index += 512;
 
         SPI_TxRx(0xFF); // CRC high
         SPI_TxRx(0xFF); // CRC low
