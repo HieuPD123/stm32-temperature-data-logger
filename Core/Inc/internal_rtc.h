@@ -8,6 +8,9 @@
 #ifndef INC_INTERNAL_RTC_H_
 #define INC_INTERNAL_RTC_H_
 
+
+#include "main.h"
+
 typedef struct {
     uint8_t seconds;
     uint8_t minutes;
@@ -27,5 +30,7 @@ void Internal_RTC_SetTime(Internal_RTC_TimeTypeDef *time);
 
 // Hàm điều hành: Đọc số giây, dịch sang ngày giờ và tự quét OLED liên tục
 void Internal_RTC_Loop_Process(void);
+
+void Internal_RTC_GetTime(Internal_RTC_TimeTypeDef *time);
 
 #endif /* INC_INTERNAL_RTC_H_ */

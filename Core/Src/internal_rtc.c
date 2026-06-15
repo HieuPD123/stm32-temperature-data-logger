@@ -44,13 +44,18 @@ void Internal_RTC_SetTime(Internal_RTC_TimeTypeDef *time) {
     total_seconds += time->minutes * 60;
     total_seconds += time->seconds;
 
-    // Ghi trực tiếp vào thanh ghi đếm RTC
-    __HAL_RTC_WRITE_COUNTER(internal_hrtc, total_seconds);
+
+    /* Ghi truc tiep thanh ghi dem RTC */
+        RTC->CRL |= RTC_CRL_CNF;                  /* mo che do cau hinh (cho phep ghi) */
+        RTC->CNTH = (total_seconds >> 16) & 0xFFFF;
+        RTC->CNTL = total_seconds & 0xFFFF;
+        RTC->CRL &= ~RTC_CRL_CNF;                 /* thoat che do cau hinh -> bat dau ghi */
+        while (!(RTC->CRL & RTC_CRL_RTOFF));      /* cho thao tac ghi hoan tat */
 }
 
-// Đọc số giây tổng từ vi điều khiển chia ngược lại thành cấu trúc thời gian
-static void Internal_RTC_GetTime(Internal_RTC_TimeTypeDef *time) {
-    uint32_t time_count = HAL_RTC_GetCounter(internal_hrtc);
+// Đọc số giây tổng từ vi điều khiển chia ngược lại thành cấu trúc thời gia
+void Internal_RTC_GetTime(Internal_RTC_TimeTypeDef *time) {
+	uint32_t time_count = ((uint32_t)RTC->CNTH << 16) | RTC->CNTL;
     uint32_t days, seconds_in_day;
     uint16_t year_tmp = 2000;
     uint8_t month_tmp = 0;
