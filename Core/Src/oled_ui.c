@@ -21,18 +21,18 @@ static const uint8_t Thermo16x16[] = {
 
 /* ====================== CACHE DU LIEU ====================== */
 static float          s_temp_c      = 0.0f;
-static OLED_SDState_t s_sd_state    = OLED_SD_ABSENT;
-static uint8_t        s_sd_free_pct = 0;
+static OLED_SDState_t s_sd_state    = OLED_SD_ERROR;
+static uint8_t        s_sd_used_pct = 0;
 
 void OLED_SetTemperature(float t)
 {
     s_temp_c = t;
 }
 
-void OLED_SetSD(OLED_SDState_t state, uint8_t free_pct)
+void OLED_SetSD(OLED_SDState_t state, uint8_t used_pct)
 {
     s_sd_state    = state;
-    s_sd_free_pct = (free_pct > 100) ? 100 : free_pct;
+    s_sd_used_pct = (used_pct > 100) ? 100 : used_pct;
 }
 
 /* ====================== DRAW HELPERS ====================== */
@@ -197,15 +197,15 @@ void Update_OLED_Display(void)
     switch(s_sd_state)
     {
         case OLED_SD_OK:
-            sd_txt = "SD:OK";
+            sd_txt = "SD: OK";
             break;
 
         case OLED_SD_ERROR:
-            sd_txt = "SD:ERR";
+            sd_txt = "SD: ERR";
             break;
 
         default:
-            sd_txt = "SD:--";
+            sd_txt = "SD: ERR";
             break;
     }
 
@@ -226,7 +226,7 @@ void Update_OLED_Display(void)
         uint8_t innerW = bw - 4;
 
         uint8_t fill =
-            ((uint16_t)innerW * s_sd_free_pct)
+            ((uint16_t)innerW * s_sd_used_pct)
             / 100;
 
         if(fill > 0)
@@ -239,4 +239,6 @@ void Update_OLED_Display(void)
             );
         }
     }
+
+    SSD1306_UpdateScreen();
 }

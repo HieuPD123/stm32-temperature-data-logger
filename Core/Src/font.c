@@ -17,10 +17,16 @@ static const uint8_t font_8[5] = {0x36,0x49,0x49,0x49,0x36};
 static const uint8_t font_9[5] = {0x06,0x49,0x49,0x29,0x1E};
 
 static const uint8_t font_T[5] = {0x01,0x01,0x7F,0x01,0x01};
+static const uint8_t font_E[5] = {0x7F,0x49,0x49,0x49,0x41};
+static const uint8_t font_O[5] = {0x3E,0x41,0x41,0x41,0x3E};
+static const uint8_t font_K[5] = {0x7F,0x08,0x14,0x22,0x41};
+static const uint8_t font_S[5] = {0x26,0x49,0x49,0x49,0x32};
+static const uint8_t font_D[5] = {0x7F,0x41,0x41,0x22,0x1C};
 static const uint8_t font_e[5] = {0x38,0x54,0x54,0x54,0x18};
 static const uint8_t font_m[5] = {0x7C,0x04,0x18,0x04,0x78};
 static const uint8_t font_p[5] = {0x7C,0x14,0x14,0x14,0x08};
 static const uint8_t font_C[5] = {0x3E,0x41,0x41,0x41,0x22};
+static const uint8_t font_R[5] = {0x7F,0x09,0x19,0x29,0x46};
 
 const uint8_t* Font5x7_GetChar(char c)
 {
@@ -43,10 +49,16 @@ const uint8_t* Font5x7_GetChar(char c)
         case '9': return font_9;
 
         case 'T': return font_T;
+        case 'E': return font_E;
+        case 'O': return font_O;
+        case 'K': return font_K;
+        case 'S': return font_S;
+        case 'D': return font_D;
         case 'e': return font_e;
         case 'm': return font_m;
         case 'p': return font_p;
         case 'C': return font_C;
+        case 'R': return font_R;
 
         default: return font_space;
     }

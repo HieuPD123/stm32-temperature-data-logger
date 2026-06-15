@@ -52,9 +52,9 @@ extern "C" {
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
-extern RTC_HandleTypeDef hrtc;
-
 /* USER CODE BEGIN EFP */
+
+extern RTC_HandleTypeDef hrtc;
 
 /* USER CODE END EFP */
 
