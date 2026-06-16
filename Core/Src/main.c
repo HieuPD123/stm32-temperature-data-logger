@@ -8,13 +8,14 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "fatfs.h"
+#include "usb_device.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
 #include "oled_ui.h"
 #include "ssd1306.h"
 #include "ds18b20.h"
-#include "fatfs.h"
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
 #include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
@@ -60,65 +61,12 @@ static void MX_SPI1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
+void SD_UpdateUsage(void);
+void SD_LogTemperature(float temp);
+/* USER CODE END PFP */
 
-void SD_UpdateUsage(void)
-{
-    FATFS *pfs;
-    DWORD fre_clust;
-
-    if(f_getfree("", &fre_clust, &pfs) != FR_OK)
-    {
-        OLED_SetSD(OLED_SD_ERROR, 0);
-        return;
-    }
-
-    DWORD total_clust = pfs->n_fatent - 2;
-
-    uint8_t used_pct =
-        (uint8_t)
-        (((total_clust - fre_clust) * 100)
-         / total_clust);
-
-    OLED_SetSD(OLED_SD_OK, used_pct);
-}
-
-void SD_LogTemperature(float temp)
-{
-    FIL file;
-    UINT bw;
-
-    RTC_TimeTypeDef sTime;
-    RTC_DateTypeDef sDate;
-
-    char line[64];
-
-    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-
-    sprintf(line,
-            "20%02d-%02d-%02d %02d:%02d:%02d, %.2f\r\n",
-            sDate.Year,
-            sDate.Month,
-            sDate.Date,
-            sTime.Hours,
-            sTime.Minutes,
-            sTime.Seconds,
-            temp);
-
-    if(f_open(&file,
-              "log.txt",
-              FA_OPEN_ALWAYS | FA_WRITE) != FR_OK)
-        return;
-
-    f_lseek(&file, f_size(&file));
-
-    f_write(&file,
-            line,
-            strlen(line),
-            &bw);
-
-    f_close(&file);
-}
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
 
@@ -157,6 +105,7 @@ int main(void)
   MX_SPI1_Init();
   MX_RTC_Init();
   MX_USART1_UART_Init();
+  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   float temp = 0.0f;
   SSD1306_Init();
@@ -185,22 +134,21 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	 temp = DS18B20_GetTemp();
-	 OLED_SetTemperature(temp);
-	 Update_OLED_Display();
+		 temp = DS18B20_GetTemp();
+		 OLED_SetTemperature(temp);
+		 Update_OLED_Display();
 
-	 if(HAL_GetTick() - lastLog >= 10000)
-	     {
-	         lastLog = HAL_GetTick();
+		 if(HAL_GetTick() - lastLog >= 10000)
+		     {
+		         lastLog = HAL_GetTick();
 
-	         SD_LogTemperature(temp);
-	         SD_UpdateUsage();
-	     }
+		         SD_LogTemperature(temp);
+		         SD_UpdateUsage();
+		     }
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
 }
-
 
 /**
   * @brief System Clock Configuration
@@ -241,8 +189,9 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_USB;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -470,7 +419,64 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void SD_UpdateUsage(void)
+{
+    FATFS *pfs;
+    DWORD fre_clust;
 
+    if(f_getfree("", &fre_clust, &pfs) != FR_OK)
+    {
+        OLED_SetSD(OLED_SD_ERROR, 0);
+        return;
+    }
+
+    DWORD total_clust = pfs->n_fatent - 2;
+
+    uint8_t used_pct =
+        (uint8_t)
+        (((total_clust - fre_clust) * 100)
+         / total_clust);
+
+    OLED_SetSD(OLED_SD_OK, used_pct);
+}
+
+void SD_LogTemperature(float temp)
+{
+    FIL file;
+    UINT bw;
+
+    RTC_TimeTypeDef sTime;
+    RTC_DateTypeDef sDate;
+
+    char line[64];
+
+    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+    sprintf(line,
+            "20%02d-%02d-%02d %02d:%02d:%02d, %.2f\r\n",
+            sDate.Year,
+            sDate.Month,
+            sDate.Date,
+            sTime.Hours,
+            sTime.Minutes,
+            sTime.Seconds,
+            temp);
+
+    if(f_open(&file,
+              "log.txt",
+              FA_OPEN_ALWAYS | FA_WRITE) != FR_OK)
+        return;
+
+    f_lseek(&file, f_size(&file));
+
+    f_write(&file,
+            line,
+            strlen(line),
+            &bw);
+
+    f_close(&file);
+}
 /* USER CODE END 4 */
 
 /**

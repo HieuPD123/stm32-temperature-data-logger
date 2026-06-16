@@ -352,13 +352,8 @@ uint8_t SD_WriteBlock(
 	if ((resp & 0x1F) != 0x05)
 	{
 		SD_Deselect();
-	    return SD_ERROR;
-	}
-
-	if(!SD_WaitReady())
-	{
-	    SD_Deselect();
-	    return SD_ERROR;
+		SPI_TxRx(0xFF);
+		return SD_ERROR;
 	}
 
 	SD_Deselect();
@@ -518,12 +513,6 @@ uint8_t SD_WriteBlocks(
 
     // Stop tran token
     SPI_TxRx(0xFD);
-
-    if(!SD_WaitReady())
-    {
-        SD_Deselect();
-        return SD_ERROR;
-    }
 
     SD_Deselect();
 
