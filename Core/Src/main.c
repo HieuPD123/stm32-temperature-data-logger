@@ -107,10 +107,10 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
+  HAL_TIM_Base_Start(&htim4);
   float temp = 0.0f;
   SSD1306_Init();
   OLED_SetTemperature(temp);
-  HAL_TIM_Base_Start(&htim4);
 
   FATFS fs;
   FRESULT fr;
