@@ -36,6 +36,7 @@
 #include <string.h>
 #include "ff_gen_drv.h"
 #include "sd_spi_driver.h"
+#include "main.h"
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
 
@@ -83,14 +84,14 @@ DSTATUS USER_initialize (
   /* USER CODE BEGIN INIT */
 	if (SD_Init() == SD_OK)
 	    {
-	        Stat &= ~STA_NOINIT;
+	        Stat = 0;
 	    }
 	    else
 	    {
-	        Stat |= STA_NOINIT;
+	        Stat = STA_NOINIT;
 	    }
 
-	    return Stat;
+	return Stat;
   /* USER CODE END INIT */
 }
 
@@ -200,32 +201,35 @@ DRESULT USER_ioctl (
   /* USER CODE BEGIN IOCTL */
 	DRESULT res = RES_ERROR;
 
-	    if (Stat & STA_NOINIT) return RES_NOTRDY;
-
-	    switch (cmd)
+	    switch(cmd)
 	    {
 	        case CTRL_SYNC:
 	            res = RES_OK;
 	            break;
+
 
 	        case GET_SECTOR_SIZE:
 	            *(WORD*)buff = 512;
 	            res = RES_OK;
 	            break;
 
+
+	        case GET_SECTOR_COUNT:
+	            *(DWORD*)buff = SD_GetSectorCount();
+
+	            if(*(DWORD*)buff > 0)
+	                res = RES_OK;
+	            else
+	                res = RES_ERROR;
+
+	            break;
+
+
 	        case GET_BLOCK_SIZE:
 	            *(DWORD*)buff = 1;
 	            res = RES_OK;
 	            break;
 
-	        case GET_SECTOR_COUNT:
-	        	*(DWORD*)buff = SD_GetSectorCount();
-	        	if(*(DWORD*)buff > 0) {
-	        		res = RES_OK;
-	        	 } else {
-	        	    res = RES_ERROR;
-	        	 }
-	            break;
 
 	        default:
 	            res = RES_PARERR;

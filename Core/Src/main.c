@@ -12,11 +12,13 @@
 #include "ssd1306.h"
 #include "ds18b20.h"
 #include "fatfs.h"
+#include "uart1.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "ff.h"
 #include <stdio.h>
 #include <string.h>
+#include "sd_spi_driver.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,8 +49,12 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 
-
-
+FATFS fs;
+FRESULT fr;
+static const char *LOG_FILE_NAME = "log.csv";
+char sd_buffer[640] = {0};
+uint8_t log_counter = 0;
+uint32_t lastSDCheck = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -60,6 +66,24 @@ static void MX_SPI1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
+
+void SPI1_SetSpeed(uint32_t prescaler)
+{
+    // 1. Tắt ngoại vi SPI1 để đảm bảo an toàn
+    __HAL_SPI_DISABLE(&hspi1);
+
+    // 2. Cập nhật lại tham số bộ chia (Prescaler) trong cấu trúc dữ liệu HAL
+    hspi1.Init.BaudRatePrescaler = prescaler;
+
+    // 3. Gọi hàm HAL_SPI_Init để HAL tự cấu hình lại các thanh ghi theo đúng trình tự chuẩn
+    if (HAL_SPI_Init(&hspi1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    // 4. Bật lại ngoại vi SPI1
+    __HAL_SPI_ENABLE(&hspi1);
+}
 
 void SD_UpdateUsage(void)
 {
@@ -82,42 +106,23 @@ void SD_UpdateUsage(void)
     OLED_SetSD(OLED_SD_OK, used_pct);
 }
 
-void SD_LogTemperature(float temp)
+void SD_LogTemperature(char *bulk_data)
 {
     FIL file;
     UINT bw;
 
-    RTC_TimeTypeDef sTime;
-    RTC_DateTypeDef sDate;
+    // Mở file (nếu chưa có thì tạo, có rồi thì mở ra)
+    if(f_open(&file, LOG_FILE_NAME, FA_OPEN_ALWAYS | FA_WRITE) == FR_OK)
+    {
+        // Nhảy đến cuối file để ghi tiếp nối đuôi
+        f_lseek(&file, f_size(&file));
 
-    char line[64];
+        // Ghi một phát toàn bộ 10 dòng trong bộ đệm xuống thẻ SD
+        f_write(&file, bulk_data, strlen(bulk_data), &bw);
 
-    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-
-    sprintf(line,
-            "20%02d-%02d-%02d %02d:%02d:%02d, %.2f\r\n",
-            sDate.Year,
-            sDate.Month,
-            sDate.Date,
-            sTime.Hours,
-            sTime.Minutes,
-            sTime.Seconds,
-            temp);
-
-    if(f_open(&file,
-              "log.txt",
-              FA_OPEN_ALWAYS | FA_WRITE) != FR_OK)
-        return;
-
-    f_lseek(&file, f_size(&file));
-
-    f_write(&file,
-            line,
-            strlen(line),
-            &bw);
-
-    f_close(&file);
+        // Đóng file để giải phóng tài nguyên
+        f_close(&file);
+    }
 }
 
 /* USER CODE END 0 */
@@ -128,56 +133,50 @@ void SD_LogTemperature(float temp)
   */
 int main(void)
 {
-
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
   SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM4_Init();
   MX_I2C1_Init();
-  MX_FATFS_Init();
   MX_SPI1_Init();
+  MX_FATFS_Init();
   MX_RTC_Init();
   MX_USART1_UART_Init();
+
   /* USER CODE BEGIN 2 */
   float temp = 0.0f;
+  UART_Command_t cmd;
+
+  UART1_Init();
   SSD1306_Init();
   OLED_SetTemperature(temp);
-  HAL_TIM_Base_Start(&htim4);
 
-  FATFS fs;
-  FRESULT fr;
-
-  fr = f_mount(&fs, "", 1);
+    fr = f_mount(&fs, "", 1);
 
   if(fr == FR_OK)
   {
-      OLED_SetSD(OLED_SD_OK, 0);
+      // --- FIX LỖI 1: TĂNG TỐC ĐỘ ĐỌC GHI THẺ SD ---
+      // Sau khi mount thành công, nâng tốc độ SPI lên để đọc ghi file nhanh gấp 32 lần
+      SPI1_SetSpeed(SPI_BAUDRATEPRESCALER_8);
+      f_unlink(LOG_FILE_NAME);
+      SD_UpdateUsage();
   }
   else
   {
       OLED_SetSD(OLED_SD_ERROR, 0);
   }
-  uint32_t lastLog = 0;
+
+  uint32_t lastDisplay = 0; // Biến thời gian cho cập nhật hiển thị/nhiệt độ
+  lastSDCheck = HAL_GetTick();
+
   Update_OLED_Display();
+  HAL_TIM_Base_Start(&htim4);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -185,22 +184,131 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	 temp = DS18B20_GetTemp();
-	 OLED_SetTemperature(temp);
-	 Update_OLED_Display();
+	      if (HAL_GetTick() - lastDisplay >= 1000)
+	      {
+	          lastDisplay = HAL_GetTick();
 
-	 if(HAL_GetTick() - lastLog >= 10000)
-	     {
-	         lastLog = HAL_GetTick();
+	          temp = DS18B20_GetTemp();
+	          OLED_SetTemperature(temp);
+	          Update_OLED_Display();
 
-	         SD_LogTemperature(temp);
-	         SD_UpdateUsage();
-	     }
-    /* USER CODE BEGIN 3 */
+	          RTC_TimeTypeDef sTime;
+	          RTC_DateTypeDef sDate;
+	          HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+	          HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+	          char single_line[64];
+	          sprintf(single_line, "20%02d-%02d-%02d %02d:%02d:%02d, %.2f\r\n",
+	                  sDate.Year, sDate.Month, sDate.Date,
+	                  sTime.Hours, sTime.Minutes, sTime.Seconds, temp);
+
+	          strcat(sd_buffer, single_line);
+	          log_counter++;
+
+	          if (log_counter >= 10)
+	          {
+	              SD_LogTemperature(sd_buffer);
+
+	              memset(sd_buffer, 0, sizeof(sd_buffer));
+	              log_counter = 0;
+	          }
+	      }
+
+	      if (HAL_GetTick() - lastSDCheck >= 300000)
+	          {
+	              lastSDCheck = HAL_GetTick();
+
+	              if (log_counter < 9)
+	              {
+	                  SD_UpdateUsage();
+	              } else {
+	                  lastSDCheck -= 2000;
+	              }
+	          }
+
+    if (UART1_LineAvailable())
+    {
+        char *line = UART1_GetLine();
+
+        if (UART1_Parse(line, &cmd))
+        {
+            switch (cmd.type)
+            {
+                case CMD_READ:
+                {
+                    FIL file;
+                    char read_buf[128];
+
+                    uint32_t start_line = cmd.value * 10;     // Dòng bắt đầu
+                    uint32_t end_line = start_line + 10;      // Dòng kết thúc
+                    uint32_t current_line = 0;                // Bộ đếm dòng hiện hành
+
+                    printf("--- START READING LINES %lu TO %lu ---\r\n", start_line, end_line - 1);
+
+                    FRESULT res = f_open(&file, LOG_FILE_NAME, FA_READ);
+                                        if (res == FR_OK)
+                                        {
+                                            while (f_gets(read_buf, sizeof(read_buf), &file) != NULL)
+                                            {
+                                                if (current_line >= start_line && current_line < end_line)
+                                                {
+                                                    printf("%s", read_buf);
+                                                }
+                                                current_line++;
+                                                if (current_line >= end_line) break;
+                                            }
+                                            f_close(&file);
+
+                                            if (current_line <= start_line)  printf("--- END OF FILE ---\r\n");
+                                            else                             printf("--- DONE ---\r\n");
+                                        }
+                                        else
+                                        {
+                                            // In ra mã lỗi cụ thể (Ví dụ: số 4 là FR_NO_FILE, số 1 là FR_DISK_ERR,...)
+                                            printf("Error: Could not open %s. FatFS Code: %d\r\n", LOG_FILE_NAME, res);
+                                        }
+                                        break;
+                                    }
+
+                case CMD_RTC_SET:
+                {
+                    RTC_TimeTypeDef sTime = {0};
+                    RTC_DateTypeDef sDate = {0};
+
+                    if (cmd.year >= 2000) {
+                        sDate.Year = cmd.year - 2000;
+                    } else {
+                        sDate.Year = cmd.year;
+                    }
+                    sDate.Month = cmd.month;
+                    sDate.Date = cmd.day;
+
+                    sTime.Hours = cmd.hour;
+                    sTime.Minutes = cmd.minute;
+                    sTime.Seconds = cmd.second;
+
+                    HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+                    HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+
+                    printf("System RTC Updated to: 20%02d-%02d-%02d %02d:%02d:%02d\r\n",
+                           sDate.Year, sDate.Month, sDate.Date,
+                           sTime.Hours, sTime.Minutes, sTime.Seconds);
+                    break;
+                }
+
+                default:
+                    printf("Unknown Command\r\n");
+                    break;
+            }
+        }
+        else
+        {
+            printf("Parse Error: Invalid format\r\n");
+        }
+    }
   }
   /* USER CODE END 3 */
 }
-
 
 /**
   * @brief System Clock Configuration

@@ -4,6 +4,8 @@
 #include "main.h"
 #include "string.h"
 
+extern uint8_t CardType;
+
 /* Return status */
 #define SD_OK      0
 #define SD_ERROR   1

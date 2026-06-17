@@ -3,7 +3,7 @@
 #define SD_CS_PORT GPIOA
 #define SD_CS_PIN  GPIO_PIN_4
 
-static uint8_t CardType = SD_TYPE_UNKNOWN;
+uint8_t CardType = SD_TYPE_UNKNOWN;
 
 static void SD_Select(void)
 {
@@ -36,7 +36,7 @@ static uint8_t SPI_TxRx(uint8_t tx)
     return rx;
 }
 
-static uint8_t SD_WaitReady(void)
+uint8_t SD_WaitReady(void)
 {
     uint8_t resp;
     uint32_t timeout = HAL_GetTick();
@@ -49,6 +49,8 @@ static uint8_t SD_WaitReady(void)
         {
             return 1;
         }
+
+        for(volatile int i = 0; i < 50; i++);
 
     } while((HAL_GetTick() - timeout) < 500);
 
@@ -70,6 +72,31 @@ static uint8_t SD_SendCmd(uint8_t cmd, uint32_t arg)
             crc = 0x87;
             break;
 
+        case CMD12:
+            SPI_TxRx(0x40 | CMD12);
+            SPI_TxRx(0x00);
+            SPI_TxRx(0x00);
+            SPI_TxRx(0x00);
+            SPI_TxRx(0x00);
+            SPI_TxRx(0x01);
+
+            for(uint8_t i = 0; i < 64; i++)
+            {
+            	resp = SPI_TxRx(0xFF);
+
+            	if(resp == 0x00)
+            	{
+            		return 0x00;
+                }
+
+
+            	if(resp == 0x7F && i > 10)
+            	{
+            		return 0x00;
+            	}
+            }
+             return 0xFF;
+
         default:
             crc = 0x01;
             break;
@@ -77,7 +104,6 @@ static uint8_t SD_SendCmd(uint8_t cmd, uint32_t arg)
 
     /* 1 byte idle trước command */
     SPI_TxRx(0xFF);
-
     /* Command frame */
     SPI_TxRx(0x40 | cmd);
 
@@ -89,7 +115,7 @@ static uint8_t SD_SendCmd(uint8_t cmd, uint32_t arg)
     SPI_TxRx(crc);
 
     /* Chờ R1 response */
-    for(uint8_t i = 0; i < 10; i++)
+    for(uint8_t i = 0; i < 64; i++)
     {
         resp = SPI_TxRx(0xFF);
 
@@ -119,6 +145,11 @@ uint8_t SD_Init(void)
 
     // Send CMD0
     SD_Select();
+
+    for(int i = 0; i < 3; i++) {
+            SPI_TxRx(0xFF);
+    }
+
     start = HAL_GetTick();
 
     do
@@ -430,11 +461,12 @@ uint8_t SD_ReadBlocks(
 		SPI_TxRx(0xFF); // CRC high
 		SPI_TxRx(0xFF); // CRC low
 	}
-
+	SPI_TxRx(0xFF);
 	resp = SD_SendCmd(CMD12, 0);
+
 	if (resp != 0x00) {
 		SD_Deselect();
-	    return SD_ERROR;
+		return SD_ERROR;
 	}
 
 	if (!SD_WaitReady())
@@ -519,14 +551,17 @@ uint8_t SD_WriteBlocks(
     // Stop tran token
     SPI_TxRx(0xFD);
 
+
+    SPI_TxRx(0xFF);
+
+
     if(!SD_WaitReady())
     {
-        SD_Deselect();
-        return SD_ERROR;
+       SD_Deselect();
+       return SD_ERROR;
     }
 
     SD_Deselect();
-
     SPI_TxRx(0xFF);
 
     return SD_OK;
@@ -573,6 +608,7 @@ uint32_t SD_GetSectorCount(void)
     SD_Deselect();
     SPI_TxRx(0xFF); // dummy clock
 
+
     /* Bóc tách bit dựa vào phiên bản cấu trúc CSD (CSD_STRUCTURE nằm ở 2 bit cao của byte đầu tiên) */
     if ((csd[0] >> 6) == 1)
     {
@@ -600,4 +636,3 @@ uint32_t SD_GetSectorCount(void)
 
     return sectors;
 }
-
